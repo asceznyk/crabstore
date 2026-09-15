@@ -50,6 +50,7 @@ struct Args {
 async fn main() {
   tracing_subscriber::fmt()
     .with_writer(std::io::stdout)
+    .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
     .init();
   let args = Args::parse();
   let port = args.port;
