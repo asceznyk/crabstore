@@ -1,10 +1,8 @@
 use std::sync::Arc;
-use std::path::PathBuf;
 use std::collections::{HashSet, VecDeque};
-use std::thread;
 use std::time::Duration;
 
-use tracing::{info, error};
+use tracing::info;
 use serde::{Deserialize, Serialize};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
@@ -23,12 +21,11 @@ async fn get_unique_keys(
   app:&App,
   volume:&str
 ) -> Result<HashSet<String>, SysError> {
-  let client = reqwest::Client::new();
   let mut uniq_keys = HashSet::new();
   let mut queue = VecDeque::from([String::from("/")]);
   while let Some(path) = queue.pop_front() {
     let url = format!("http://{}{}", volume, path);
-    let files: Vec<File> = client
+    let files: Vec<File> = app.client
       .get(&url)
       .timeout(Duration::from_secs(app.voltimeout.try_into().unwrap()))
       .send()

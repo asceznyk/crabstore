@@ -8,19 +8,19 @@ use clap::{Parser, Subcommand};
 use redb::{Database};
 
 mod core;
-use core::{
-  App, Record, Deleted, SysError
-};
+use core::App;
 mod server;
 use server::{serve};
 mod rebuild;
 use rebuild::{rebuild};
+mod rebalance;
+use rebalance::{rebalance};
 
 #[derive(Subcommand)]
 enum Command {
   Run,
   Rebuild,
-  //Rebalance
+  Rebalance
 }
 
 const DEFAULT_PORT:usize = 4000;
@@ -79,6 +79,11 @@ async fn main() {
     error!("main: {} > {}", nreplicas, vlen);
     return;
   }
+  if nreplicas > 5 {
+    error!("main: cannot have more than 5 replicas");
+    error!("main: nreplicas = {nreplicas}");
+    return;
+  }
   let app = Arc::new(App {
     volumes,
     nreplicas,
@@ -86,13 +91,19 @@ async fn main() {
     voltimeout,
     db: Database::create(dbfile.clone()).unwrap(),
     uindex: Mutex::new(HashSet::new()),
+    client: reqwest::Client::builder()
+      .pool_max_idle_per_host(100)
+      .build().unwrap()
   });
   match args.command {
     Some(Command::Run) => {
-      serve(app, port).await;
+      let _ = serve(app, port).await;
     },
     Some (Command::Rebuild) => {
-      rebuild(app).await;
+      let _ = rebuild(app).await;
+    }
+    Some (Command::Rebalance) => {
+      let _ = rebalance(app).await;
     }
     None => {
       error!("main: no command provided! available: `run, rebuild, rebalance`");

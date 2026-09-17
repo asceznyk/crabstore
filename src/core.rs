@@ -16,15 +16,14 @@ use axum::body::Body;
 use reqwest::Client;
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
-use futures::future::try_join_all;
 use futures_util::StreamExt;
 use md5::{Digest, Md5};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
-const DEFAULT_LIST_LIMIT:usize = 100;
-const MAX_LIST_LIMIT:usize = 1000;
+pub const DEFAULT_LIST_LIMIT:usize = 100;
+pub const MAX_LIST_LIMIT:usize = 1000;
 
-const TABLE:TableDefinition<String,String> = TableDefinition::new("path_map");
+pub const TABLE:TableDefinition<String,String> = TableDefinition::new("path_map");
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Deleted(pub i32);
@@ -62,8 +61,6 @@ pub enum SysError {
   Base64Decode(#[from] base64::DecodeError),
   #[error("not found")]
   InvalidCursor,
-  #[error("not found")]
-  NotFound,
   #[error("record not found")]
   RecordNotFound,
   #[error("internal server error")]
@@ -73,12 +70,6 @@ pub enum SysError {
 impl IntoResponse for SysError {
   fn into_response(self) -> Response {
     match self {
-      SysError::NotFound => (
-        StatusCode::NOT_FOUND,
-        Json(json!({
-          "error": "Not found"
-        })),
-      ).into_response(),
       SysError::Internal => (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(json!({
@@ -175,21 +166,20 @@ pub fn select_volumes_by_key(
   kvolumes
 }
 
-async fn stream_to_replicas(
+pub async fn stream_to_replicas(
+  client:&Client,
   body:Body,
   remote_paths:Vec<String>
 ) -> Result<(),SysError> {
   info!("stream_to_replicas: remote_paths = {:?}", remote_paths);
-  let client = Client::new();
   let mut senders = Vec::new();
   let mut uploads = Vec::new();
   for rpath in remote_paths {
-    let (tx, rx) = mpsc::channel::<Result<bytes::Bytes,std::io::Error>>(8);
+    let (tx, rx) = mpsc::channel::<Result<bytes::Bytes,std::io::Error>>(256);
     senders.push(tx);
     let req_body = reqwest::Body::wrap_stream(ReceiverStream::new(rx));
     let client = client.clone();
     let upload = tokio::spawn(async move {
-      info!("stream_to_replicas: starting upload to {}", rpath);
       let result = async {
         let resp = client
           .put(&rpath)
@@ -208,9 +198,13 @@ async fn stream_to_replicas(
     uploads.push(upload);
   }
   let mut body_stream = body.into_data_stream();
-  while let Some(chunk) = body_stream.next().await {
+  loop {
+    let chunk = body_stream.next().await;
+    let Some(chunk) = chunk else {
+      break;
+    };
     let chunk = chunk?;
-    for (i, tx) in senders.iter().enumerate() {
+    for tx in &senders {
       tx.send(Ok(chunk.clone()))
         .await
         .map_err(|_| SysError::Internal)?;
@@ -238,7 +232,8 @@ pub struct App {
   pub nsub: usize,
   pub nreplicas: usize,
   pub voltimeout: usize,
-  pub db: Database
+  pub db: Database,
+  pub client: reqwest::Client,
 }
 
 fn prefix_upper_bound(prefix:&str) -> Option<String> {
@@ -318,7 +313,7 @@ impl App {
       );
       remote_paths.push(rpath);
     }
-    stream_to_replicas(req.into_body(), remote_paths).await?;
+    stream_to_replicas(&self.client, req.into_body(), remote_paths).await?;
     self.put_record(
       &key.to_string(), &Record {
         replica_volumes: kvolumes.clone(),

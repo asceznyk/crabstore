@@ -46,11 +46,11 @@ async fn main() {
   let base_url = format!("http://localhost:{}", port);
   let client = Arc::new(
     reqwest::Client::builder()
-      .pool_max_idle_per_host(100)
+      .pool_max_idle_per_host(1000)
       .build()
       .expect("failed to create HTTP client")
   );
-  let count = 1000;
+  let count = 10000;
   let workers = 16;
   println!("starting thrasher");
   let start = Instant::now();
@@ -58,19 +58,19 @@ async fn main() {
   for worker in 0..workers {
     let client = Arc::clone(&client);
     let base_url = base_url.clone();
-    let n = count / workers + usize::from(worker < count % workers);
+    let n_ops = count / workers + usize::from(worker < count % workers);
     tasks.spawn(async move {
-      for _ in 0..n {
+      for _ in 0..n_ops {
         let key = format!("benchmark-{}", rand::rng().random::<u64>());
         let value = format!("value-{}", rand::rng().random::<u64>());
         let url = format!("{}/{}", base_url, key);
-        let operation_start = Instant::now();
+        let opstart = Instant::now();
         if let Err(err) = remote_put(&client, &url, &value).await {
           eprintln!("PUT FAILED: {}", err);
           return false;
         }
-        println!("[worker {}] PUT {} in {:?}", worker, key, operation_start.elapsed());
-        let operation_start = Instant::now();
+        //println!("[worker {}] PUT {} in {:?}", worker, key, opstart.elapsed());
+        let opstart = Instant::now();
         match remote_get(&client, &url).await {
           Ok(body) if body == value => {}
           Ok(body) => {
@@ -82,13 +82,13 @@ async fn main() {
             return false;
           }
         }
-        println!("[worker {}] GET {} in {:?}", worker, key, operation_start.elapsed());
-        let operation_start = Instant::now();
+        //println!("[worker {}] GET {} in {:?}", worker, key, opstart.elapsed());
+        let opstart = Instant::now();
         if let Err(err) = remote_delete(&client, &url).await {
           eprintln!("DELETE FAILED: {}", err);
           return false;
         }
-        println!("[worker {}] DELETE {} in {:?}", worker, key, operation_start.elapsed());
+        //println!("[worker {}] DELETE {} in {:?}", worker, key, opstart.elapsed());
       }
       true
     });

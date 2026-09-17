@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{
-  extract::{Path, State, Request},
+  extract::{State, Request},
   http::{StatusCode},
   response::{IntoResponse, Response},
   Json,
@@ -15,13 +15,12 @@ use serde_json::{json, Value};
 use rand::seq::SliceRandom;
 use rand::rng;
 
-use crate::core::{App, Record, Deleted, SysError, ListQuery};
+use crate::core::{App, Deleted, SysError, ListQuery};
 use crate::core::{hash_key_into_path};
 
 async fn handle_get(
   app:&App,
-  key:&str,
-  req:Request
+  key:&str
 ) -> Result<(StatusCode, HeaderMap, Json<Value>), SysError> {
   let not_found = || {
     (
@@ -44,21 +43,20 @@ async fn handle_get(
   }
   let mut rvolumes = rec.replica_volumes.clone();
   rvolumes.shuffle(&mut rng());
-  let client = reqwest::Client::new();
-  let mut mpath: Option<String> = None;
+  let mut mpath:Option<String> = None;
   for rvolume in rvolumes {
     let rpath = format!(
       "http://{}/{}",
       rvolume,
       hash_key_into_path(key.as_bytes())
     );
-    let response = client
+    let resp = app.client
       .head(&rpath)
       .timeout(Duration::from_secs(app.voltimeout.try_into().unwrap()))
       .send()
       .await;
-    if let Ok(response) = response {
-      if response.status().is_success() {
+    if let Ok(resp) = resp {
+      if resp.status().is_success() {
         mpath = Some(rpath);
         break;
       }
@@ -149,14 +147,13 @@ async fn handle_delete(app:&App, key:&str) -> Result<StatusCode,SysError> {
   if rec.deleted == Deleted::SOFT || rec.deleted == Deleted::HARD {
     return Ok(StatusCode::NOT_FOUND);
   }
-  let client = reqwest::Client::new();
   for rvolume in rec.replica_volumes {
     let rpath = format!(
       "http://{}/{}",
       rvolume,
       hash_key_into_path(key.as_bytes())
     );
-    client
+    app.client
       .delete(&rpath)
       .timeout(Duration::from_secs(app.voltimeout.try_into().unwrap()))
       .send()
@@ -184,7 +181,7 @@ async fn dispatch_key(app:Arc<App>, key:String, req:Request) -> Response {
   }
   match rmethod {
     "GET" => {
-      handle_get(&app, &key, req).await.into_response()
+      handle_get(&app, &key).await.into_response()
     },
     "PUT" => {
       let resp = handle_put(&app, &key, req).await;
