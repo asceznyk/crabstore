@@ -5,6 +5,16 @@ cargo build
 
 DB=/tmp/test.db
 
+start_volume_servers() {
+  echo "Starting volume servers..."
+  ./scripts/bringup.sh
+}
+
+kill_volume_servers() {
+  echo "Stopping nginx volume servers..."
+  kill $(pgrep -f nginx)
+}
+
 start_server() {
   setsid ./target/debug/crabstore \
     --pvolumes localhost:4001,localhost:4002,localhost:4003,localhost:4004,localhost:4005 \
@@ -155,6 +165,8 @@ cleanup() {
 
 trap cleanup EXIT
 
+start_volume_servers
+
 start_server
 test_concurrent_put
 stop_server
@@ -167,6 +179,8 @@ reset_db
 
 start_server
 test_concurrent_put_delete
+
+kill_volume_servers
 
 echo "ALL TESTS PASSED"
 

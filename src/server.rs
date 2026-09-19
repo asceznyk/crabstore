@@ -136,7 +136,7 @@ async fn handle_delete(app:&App, key:&str) -> Result<StatusCode,SysError> {
   let rec = match app.get_record(&key.to_string()) {
     Ok(rec) => rec,
     Err(SysError::RecordNotFound) => {
-      error!("handle_delete: record is not found!");
+      info!("handle_delete: record is not found!");
       return Err(SysError::RecordNotFound);
     }
     Err(err) => {

@@ -46,7 +46,7 @@ async fn main() {
   let base_url = format!("http://localhost:{}", port);
   let client = Arc::new(
     reqwest::Client::builder()
-      .pool_max_idle_per_host(1000)
+      .pool_max_idle_per_host(100)
       .build()
       .expect("failed to create HTTP client")
   );

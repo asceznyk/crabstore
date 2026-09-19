@@ -7,13 +7,12 @@ use tracing::info;
 use redb::{ReadableDatabase};
 use axum::body::Body;
 
-use crate::core::{TABLE, DEFAULT_LIST_LIMIT, Deleted, Record, App, SysError};
+use crate::core::{TABLE, Deleted, Record, App, SysError};
 use crate::core::{
   to_record, select_volumes_by_key, hash_key_into_path, stream_to_replicas
 };
 
 fn needs_rebalance(kvolumes:&Vec<String>, rvolumes:&Vec<String>) -> bool {
-  info!("needs_rebalance: kvolumes = {:?}, rvolumes = {:?}", kvolumes, rvolumes);
   if kvolumes.len() != rvolumes.len() {
     return true;
   }
@@ -113,7 +112,6 @@ pub async fn rebalance(app:Arc<App>) -> Result<(),SysError> {
     Bound::<String>::Unbounded,
     Bound::<String>::Unbounded
   ))?;
-  let mut count = 0;
   for item in range {
     let (key, rec) = item?;
     let _ = balance_item(
@@ -121,10 +119,6 @@ pub async fn rebalance(app:Arc<App>) -> Result<(),SysError> {
       key.value().to_string(),
       to_record(rec.value().as_str()).unwrap()
     ).await;
-    count += 1;
-    if count > DEFAULT_LIST_LIMIT {
-      break;
-    }
   }
   Ok(())
 }
